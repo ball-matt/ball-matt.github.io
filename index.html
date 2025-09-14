@@ -5,23 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Matt Ball - PhD Candidate • Agricultural Data Scientist</title>
 <meta name="description" content="Responsive sort-and-return data animation for Matt Ball." />
-
-<!-- Social cards -->
 <meta property="og:title" content="Matt Ball – PhD Candidate • Agricultural Data Scientist">
 <meta property="og:description" content="Interactive sort-and-return data viz business card.">
 <meta property="og:url" content="https://ball-matt.github.io/">
 <meta name="twitter:card" content="summary_large_image">
-<!-- Optional preview image if you add one later:
-<meta property="og:image" content="https://ball-matt.github.io/preview.png">
-<meta name="twitter:image" content="https://ball-matt.github.io/preview.png">
--->
-
-<!-- Favicon: wheat emoji -->
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌾</text></svg>'>
-
-<!-- Mobile address bar color -->
 <meta name="theme-color" content="#0b0d12">
-
 <style>
   :root{
     --bg:#0b0d12; --fg:#e6edf3; --muted:#9aa4b2;
@@ -56,18 +45,15 @@
   const canvas = document.getElementById('viz');
   const ctx = canvas.getContext('2d');
 
-  // Respect user preferences / power:
   const PREFERS_REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let PAUSED = false;
   document.addEventListener('visibilitychange', () => { PAUSED = document.hidden; });
 
-  // --- Speed (snappier settings) ---
   const MOVE_MS = 900;
   const STAGGER_MS = 35;
   const PAUSE_BETWEEN_COLORS = 200;
   const PAUSE_BETWEEN_CYCLES = 600;
 
-  // --- Responsive layout helpers ---
   let ratio = window.devicePixelRatio || 1;
   const M = { l: 56, r: 28, t: 24, b: 44 };
   function layout(){
@@ -92,7 +78,6 @@
     ctx.setTransform(ratio,0,0,ratio,0,0);
   }
 
-  // --- Styles ---
   const GRID  = 'rgba(255,255,255,0.06)';
   const AXIS  = '#1f2a3a';
   const PANEL_BG = 'rgba(255,255,255,0.03)';
@@ -106,7 +91,6 @@
     'rgba(199,155,219,0.92)'
   ];
 
-  // --- Data (linear-looking) ---
   const a = 0.9, b = 0.05, noise = 0.06;
   const N = 700;
   function clamp01(z){ return Math.max(0, Math.min(1, z)); }
@@ -120,7 +104,6 @@
     pts.push({ u, v, x:0,y:0, ox:0,oy:0, c, rx:0,ry:0, t0:-1, dir:0, atRight:false });
   }
 
-  // --- Right-panel targets (columns by color) ---
   function assignSortTargets(){
     const {sort} = layout();
     const cols = COLORS.length;
@@ -141,7 +124,6 @@
     }
   }
 
-  // --- Axes (no labels/units) + sort panel frame ---
   function drawAxes(){
     const {plot} = layout();
     const {x,y,w,h} = plot;
@@ -162,14 +144,13 @@
     }
   }
 
-  // --- Animation scheduler (collect → return) ---
-  let phase = 'collect';        // 'collect' | 'return'
+  let phase = 'collect';
   let activeColor = 0;
   let cooldownUntil = 0;
 
   function scheduleCollect(color){
     const list = pts.filter(p=>!p.atRight && p.c===color);
-    list.sort((a,b)=> (b.x - a.x)); // rightmost first
+    list.sort((a,b)=> (b.x - a.x));
     const now = performance.now();
     list.forEach((p,i)=>{ p.dir=1; p.t0 = now + i*STAGGER_MS; });
     cooldownUntil = now + list.length*STAGGER_MS + MOVE_MS + PAUSE_BETWEEN_COLORS;
@@ -194,44 +175,38 @@
     }
   }
 
-  // --- Reproject on resize/orientation (keeps animation state intact) ---
   function reprojectPositions(){
-    sizeCanvas();           // set canvas px + DPR
-    // Recompute scatter positions (ox/oy) in new geometry
+    sizeCanvas();
     for (const p of pts){ const a = toXY(p.u, p.v); p.ox = a.x; p.oy = a.y; }
-    // Recompute sort targets (rx/ry) in new geometry
     assignSortTargets();
-
     const now = performance.now();
     for (const p of pts){
-      if (p.dir === 1){              // moving to right
+      if (p.dir === 1){
         if (now < p.t0){ p.x = p.ox; p.y = p.oy; }
         else {
           const m = Math.max(0, Math.min(1, (now - p.t0) / MOVE_MS));
           p.x = p.ox + (p.rx - p.ox)*m;
           p.y = p.oy + (p.ry - p.oy)*m;
         }
-      } else if (p.dir === -1){      // moving back to scatter
+      } else if (p.dir === -1){
         if (now < p.t0){ p.x = p.rx; p.y = p.ry; }
         else {
           const m = Math.max(0, Math.min(1, (now - p.t0) / MOVE_MS));
           p.x = p.rx + (p.ox - p.rx)*m;
           p.y = p.ry + (p.oy - p.ry)*m;
         }
-      } else {                       // idle
+      } else {
         if (p.atRight){ p.x = p.rx; p.y = p.ry; }
         else           { p.x = p.ox; p.y = p.oy; }
       }
     }
   }
 
-  // --- Build initial geometry, then start ---
   sizeCanvas();
   for (const p of pts){ const a = toXY(p.u, p.v); p.x=p.ox=a.x; p.y=p.oy=a.y; }
   assignSortTargets();
   reprojectPositions();
 
-  // Handle resize + orientation change
   let resizeTimer = null;
   function onResize(){
     clearTimeout(resizeTimer);
@@ -240,23 +215,19 @@
   window.addEventListener('resize', onResize, {passive:true});
   window.addEventListener('orientationchange', onResize, {passive:true});
 
-  // --- Easing + draw loop ---
   const ease = t => t<.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2;
 
   function step(now){
     const {w,h} = layout();
     ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
 
-    // Axes + right panel
     drawAxes();
     drawRightPanel();
 
-    // Respect reduced motion / page hidden:
     if (!(PREFERS_REDUCED || PAUSED)) {
       tickPhases(now);
     }
 
-    // Ghosts at original locations when away or heading to right
     for (const p of pts){
       if (p.atRight || (p.dir===1 && now >= p.t0)){
         ctx.fillStyle = GHOST;
@@ -264,17 +235,14 @@
       }
     }
 
-    // Move & draw points
     for (const p of pts){
       if (!(PREFERS_REDUCED || PAUSED) && p.dir !== 0 && p.t0 >= 0){
         const t = (now - p.t0) / MOVE_MS;
-        if (t <= 0){
-          // waiting
-        } else if (t >= 1){
+        if (t >= 1){
           if (p.dir === 1){ p.x = p.rx; p.y = p.ry; p.atRight = true; }
           else            { p.x = p.ox; p.y = p.oy; p.atRight = false; }
           p.dir = 0; p.t0 = -1;
-        } else {
+        } else if (t > 0){
           const m = ease(t);
           if (p.dir === 1){ p.x = p.ox + (p.rx - p.ox)*m; p.y = p.oy + (p.ry - p.oy)*m; }
           else            { p.x = p.rx + (p.ox - p.rx)*m; p.y = p.ry + (p.oy - p.ry)*m; }
@@ -287,7 +255,6 @@
     requestAnimationFrame(step);
   }
 
-  // Kick off first batch (but skip if user prefers reduced motion)
   (function boot(){
     const {w,h} = layout();
     ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
