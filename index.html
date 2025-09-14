@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Matt Ball - PhD Candidate • Agricultural Data Scientist</title>
+<meta name="description" content="Responsive sort-and-return data animation for Matt Ball." />
+<style>
+  :root{
+    --bg:#0b0d12; --fg:#e6edf3; --muted:#9aa4b2;
+    --card:#121720; --line:#1e2633;
+  }
+  *{box-sizing:border-box}
+  body{ margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif }
+  header{ max-width:980px; margin:22px auto 10px; padding:0 16px }
+  h1{ margin:0; font-size:clamp(24px,3.8vw,36px) }
+  .sub{ margin-top:6px; color:var(--muted); font-size:clamp(14px,2.4vw,16px) }
+  .wrap{ max-width:980px; margin:16px auto 26px; padding:0 16px }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.35) }
+  canvas{ width:100%; height:auto; display:block; border-radius:12px; background:var(--card) }
+</style>
+</head>
+<body>
+<header>
+  <h1>Matt Ball</h1>
+  <div class="sub">PhD Candidate • Agricultural Data Scientist</div>
+  <div class="sub">University of Alberta • Corteva Agriscience</div>
+  <div class="sub"><a href="mailto:mball1@ualberta.ca" style="color:#7cc7ff">mball1@ualberta.ca</a></div>
+</header>
+
+<div class="wrap">
+  <div class="card" aria-label="Scatter on axes; points sort by color to the right, then return">
+    <canvas id="viz" width="980" height="460"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('viz');
+  const ctx = canvas.getContext('2d');
+
+  // --- Speed (snappier settings) ---
+  const MOVE_MS = 900;
+  const STAGGER_MS = 35;
+  const PAUSE_BETWEEN_COLORS = 200;
+  const PAUSE_BETWEEN_CYCLES = 600;
+
+  // --- Responsive layout helpers ---
+  let ratio = window.devicePixelRatio || 1;
+  const M = { l: 56, r: 28, t: 24, b: 44 };
+  function layout(){
+    const w = canvas.clientWidth || canvas.width/ratio;
+    const h = parseInt(canvas.style.height) || canvas.height/ratio;
+    const plotW = Math.floor((w - M.l - M.r) * (w < 520 ? 0.58 : 0.62));
+    const gap = w < 520 ? 12 : 18;
+    const sortW = (w - M.l - M.r) - plotW - gap;
+    const plot = { x:M.l, y:M.t, w:plotW, h: h - M.t - M.b };
+    const sort = { x: plot.x + plot.w + gap, y:M.t, w:sortW, h: h - M.t - M.b };
+    return { w, h, plot, sort };
+  }
+  function toXY(u,v){ const {plot} = layout(); return { x: plot.x + u*plot.w, y: plot.y + (1-v)*plot.h }; }
+
+  function sizeCanvas(){
+    ratio = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || canvas.width;
+    const cssH = Math.round(cssW * 0.47);
+    canvas.style.height = cssH + 'px';
+    canvas.width  = Math.floor(cssW * ratio);
+    canvas.height = Math.floor(cssH * ratio);
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+  }
+
+  // --- Styles ---
+  const GRID  = 'rgba(255,255,255,0.06)';
+  const AXIS  = '#1f2a3a';
+  const PANEL_BG = 'rgba(255,255,255,0.03)';
+  const PANEL_LINE = 'rgba(255,255,255,0.07)';
+  const GHOST = 'rgba(255,255,255,0.20)';
+
+  const COLORS = [
+    'rgba(124,199,255,0.92)',
+    'rgba(155,219,151,0.92)',
+    'rgba(255,207,124,0.92)',
+    'rgba(199,155,219,0.92)'
+  ];
+
+  // --- Data (linear-looking) ---
+  const a = 0.9, b = 0.05, noise = 0.06;
+  const N = 700;
+  function clamp01(z){ return Math.max(0, Math.min(1, z)); }
+  function randn(){ let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+  const pts = [];
+  for (let i=0;i<N;i++){
+    const u = Math.random();
+    let v = a*u + b + randn()*noise; v = clamp01(v);
+    const c = i % COLORS.length;
+    pts.push({ u, v, x:0,y:0, ox:0,oy:0, c, rx:0,ry:0, t0:-1, dir:0, atRight:false });
+  }
+
+  // --- Right-panel targets (columns by color) ---
+  function assignSortTargets(){
+    const {sort} = layout();
+    const cols = COLORS.length;
+    const colW = sort.w / cols;
+    const margin = 16;
+    const usableH = sort.h - margin*2;
+    const counts = new Array(cols).fill(0);
+    const perCol = Math.ceil(N / cols);
+    const rows = Math.ceil(perCol / 12) + (window.innerWidth < 520 ? 10 : 12);
+    for (const p of pts){
+      const i = p.c;
+      const idx = counts[i]++;
+      const row = idx % rows;
+      const depth = Math.floor(idx / rows);
+      const cx = sort.x + i*colW + colW*0.5 + (depth%2 ? -5 : 5);
+      const cy = sort.y + margin + row * (usableH / rows);
+      p.rx = cx; p.ry = cy;
+    }
+  }
+
+  // --- Axes (no labels/units) + sort panel frame ---
+  function drawAxes(){
+    const {plot} = layout();
+    const {x,y,w,h} = plot;
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    const xt=5, yt=4;
+    for(let i=0;i<=xt;i++){ const xx = x + (i/xt)*w; ctx.beginPath(); ctx.moveTo(xx,y); ctx.lineTo(xx,y+h); ctx.stroke(); }
+    for(let j=0;j<=yt;j++){ const yy = y + (j/yt)*h; ctx.beginPath(); ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); ctx.stroke(); }
+    ctx.strokeStyle = AXIS; ctx.lineWidth = 1.2; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+  }
+  function drawRightPanel(){
+    const {sort} = layout();
+    ctx.fillStyle = PANEL_BG; ctx.strokeStyle = PANEL_LINE; ctx.lineWidth = 1;
+    ctx.fillRect(sort.x, sort.y, sort.w, sort.h);
+    ctx.strokeRect(sort.x+0.5, sort.y+0.5, sort.w-1, sort.h-1);
+    for(let i=1;i<COLORS.length;i++){
+      const xx = sort.x + sort.w*i/COLORS.length;
+      ctx.beginPath(); ctx.moveTo(xx, sort.y+4); ctx.lineTo(xx, sort.y+sort.h-4); ctx.stroke();
+    }
+  }
+
+  // --- Animation scheduler (collect → return) ---
+  let phase = 'collect';        // 'collect' | 'return'
+  let activeColor = 0;
+  let cooldownUntil = 0;
+
+  function scheduleCollect(color){
+    const list = pts.filter(p=>!p.atRight && p.c===color);
+    list.sort((a,b)=> (b.x - a.x)); // rightmost first
+    const now = performance.now();
+    list.forEach((p,i)=>{ p.dir=1; p.t0 = now + i*STAGGER_MS; });
+    cooldownUntil = now + list.length*STAGGER_MS + MOVE_MS + PAUSE_BETWEEN_COLORS;
+  }
+  function scheduleReturn(){
+    const list = pts.filter(p=>p.atRight);
+    list.sort((a,b)=> (a.rx === b.rx ? a.ry - b.ry : a.rx - b.rx));
+    const now = performance.now();
+    list.forEach((p,i)=>{ p.dir=-1; p.t0 = now + i*STAGGER_MS; });
+    cooldownUntil = now + list.length*STAGGER_MS + MOVE_MS + PAUSE_BETWEEN_CYCLES;
+  }
+  function tickPhases(now){
+    const anyMoving   = pts.some(p => p.dir !== 0 && p.t0 >= 0 && now >= p.t0 && (now - p.t0) <= MOVE_MS);
+    const anyScheduled= pts.some(p => p.dir !== 0 && now < p.t0);
+    if (!anyMoving && !anyScheduled && now >= cooldownUntil){
+      if (phase==='collect'){
+        if (activeColor < COLORS.length){ scheduleCollect(activeColor++); }
+        else { phase='return'; activeColor=0; scheduleReturn(); }
+      } else {
+        phase='collect'; activeColor=0; scheduleCollect(activeColor++);
+      }
+    }
+  }
+
+  // --- Reproject on resize/orientation (keeps animation state intact) ---
+  function reprojectPositions(){
+    sizeCanvas();           // set canvas px + DPR
+    // Recompute scatter positions (ox/oy) in new geometry
+    for (const p of pts){ const a = toXY(p.u, p.v); p.ox = a.x; p.oy = a.y; }
+    // Recompute sort targets (rx/ry) in new geometry
+    assignSortTargets();
+
+    const now = performance.now();
+    for (const p of pts){
+      if (p.dir === 1){              // moving to right
+        if (now < p.t0){ p.x = p.ox; p.y = p.oy; }
+        else {
+          const m = Math.max(0, Math.min(1, (now - p.t0) / MOVE_MS));
+          p.x = p.ox + (p.rx - p.ox)*m;
+          p.y = p.oy + (p.ry - p.oy)*m;
+        }
+      } else if (p.dir === -1){      // moving back to scatter
+        if (now < p.t0){ p.x = p.rx; p.y = p.ry; }
+        else {
+          const m = Math.max(0, Math.min(1, (now - p.t0) / MOVE_MS));
+          p.x = p.rx + (p.ox - p.rx)*m;
+          p.y = p.ry + (p.oy - p.ry)*m;
+        }
+      } else {                       // idle
+        if (p.atRight){ p.x = p.rx; p.y = p.ry; }
+        else           { p.x = p.ox; p.y = p.oy; }
+      }
+    }
+  }
+
+  // --- Build initial geometry, then start ---
+  sizeCanvas();
+  for (const p of pts){ const a = toXY(p.u, p.v); p.x=p.ox=a.x; p.y=p.oy=a.y; }
+  assignSortTargets();
+  reprojectPositions();
+
+  // Handle resize + orientation change
+  let resizeTimer = null;
+  function onResize(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(reprojectPositions, 50);
+  }
+  window.addEventListener('resize', onResize, {passive:true});
+  window.addEventListener('orientationchange', onResize, {passive:true});
+
+  // --- Easing + draw loop ---
+  const ease = t => t<.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2;
+
+  function step(now){
+    const {w,h} = layout();
+    ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
+
+    // Axes + right panel
+    drawAxes();
+    drawRightPanel();
+
+    // Phase control
+    tickPhases(now);
+
+    // Ghosts at original locations when away or heading to right
+    for (const p of pts){
+      if (p.atRight || (p.dir===1 && now >= p.t0)){
+        ctx.fillStyle = GHOST;
+        ctx.beginPath(); ctx.arc(p.ox, p.oy, 2, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // Move & draw points
+    for (const p of pts){
+      if (p.dir !== 0 && p.t0 >= 0){
+        const t = (now - p.t0) / MOVE_MS;
+        if (t <= 0){
+          // waiting
+        } else if (t >= 1){
+          if (p.dir === 1){ p.x = p.rx; p.y = p.ry; p.atRight = true; }
+          else            { p.x = p.ox; p.y = p.oy; p.atRight = false; }
+          p.dir = 0; p.t0 = -1;
+        } else {
+          const m = ease(t);
+          if (p.dir === 1){ p.x = p.ox + (p.rx - p.ox)*m; p.y = p.oy + (p.ry - p.oy)*m; }
+          else            { p.x = p.rx + (p.ox - p.rx)*m; p.y = p.ry + (p.oy - p.ry)*m; }
+        }
+      }
+      ctx.fillStyle = COLORS[p.c];
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  // Kick off first batch
+  (function boot(){
+    const {w,h} = layout();
+    ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
+    scheduleCollect(activeColor++);
+  })();
+  requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
