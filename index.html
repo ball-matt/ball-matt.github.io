@@ -3,14 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Matt Ball - PhD Candidate • Agricultural Data Scientist</title>
+<title>Matt Ball - mball1@ualberta.ca</title>
 <meta name="description" content="Responsive sort-and-return data animation for Matt Ball." />
-<meta property="og:title" content="Matt Ball – PhD Candidate • Agricultural Data Scientist">
-<meta property="og:description" content="Interactive sort-and-return data viz business card.">
-<meta property="og:url" content="https://ball-matt.github.io/">
-<meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌾</text></svg>'>
-<meta name="theme-color" content="#0b0d12">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">👨‍💻</text></svg>'>
 <style>
   :root{
     --bg:#0b0d12; --fg:#e6edf3; --muted:#9aa4b2;
@@ -45,10 +40,6 @@
   const canvas = document.getElementById('viz');
   const ctx = canvas.getContext('2d');
 
-  const PREFERS_REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let PAUSED = false;
-  document.addEventListener('visibilitychange', () => { PAUSED = document.hidden; });
-
   const MOVE_MS = 900;
   const STAGGER_MS = 35;
   const PAUSE_BETWEEN_COLORS = 200;
@@ -58,7 +49,7 @@
   const M = { l: 56, r: 28, t: 24, b: 44 };
   function layout(){
     const w = canvas.clientWidth || canvas.width/ratio;
-    const h = parseInt(canvas.style.height) || canvas.height/ratio;
+       const h = parseInt(canvas.style.height) || canvas.height/ratio;
     const plotW = Math.floor((w - M.l - M.r) * (w < 520 ? 0.58 : 0.62));
     const gap = w < 520 ? 12 : 18;
     const sortW = (w - M.l - M.r) - plotW - gap;
@@ -99,7 +90,7 @@
   const pts = [];
   for (let i=0;i<N;i++){
     const u = Math.random();
-    let v = a*u + b + randn()*noise; v = clamp01(v);
+    let v = a*u + b + randn()*noise; v = Math.max(0, Math.min(1, v));
     const c = i % COLORS.length;
     pts.push({ u, v, x:0,y:0, ox:0,oy:0, c, rx:0,ry:0, t0:-1, dir:0, atRight:false });
   }
@@ -144,7 +135,6 @@
     }
   }
 
-  let phase = 'collect';
   let activeColor = 0;
   let cooldownUntil = 0;
 
@@ -166,12 +156,8 @@
     const anyMoving   = pts.some(p => p.dir !== 0 && p.t0 >= 0 && now >= p.t0 && (now - p.t0) <= MOVE_MS);
     const anyScheduled= pts.some(p => p.dir !== 0 && now < p.t0);
     if (!anyMoving && !anyScheduled && now >= cooldownUntil){
-      if (phase==='collect'){
-        if (activeColor < COLORS.length){ scheduleCollect(activeColor++); }
-        else { phase='return'; activeColor=0; scheduleReturn(); }
-      } else {
-        phase='collect'; activeColor=0; scheduleCollect(activeColor++);
-      }
+      if (activeColor < COLORS.length){ scheduleCollect(activeColor++); }
+      else { activeColor=0; scheduleReturn(); }
     }
   }
 
@@ -220,23 +206,17 @@
   function step(now){
     const {w,h} = layout();
     ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
-
     drawAxes();
     drawRightPanel();
-
-    if (!(PREFERS_REDUCED || PAUSED)) {
-      tickPhases(now);
-    }
-
+    tickPhases(now);
     for (const p of pts){
       if (p.atRight || (p.dir===1 && now >= p.t0)){
-        ctx.fillStyle = GHOST;
+        ctx.fillStyle = 'rgba(255,255,255,0.20)';
         ctx.beginPath(); ctx.arc(p.ox, p.oy, 2, 0, Math.PI*2); ctx.fill();
       }
     }
-
     for (const p of pts){
-      if (!(PREFERS_REDUCED || PAUSED) && p.dir !== 0 && p.t0 >= 0){
+      if (p.dir !== 0 && p.t0 >= 0){
         const t = (now - p.t0) / MOVE_MS;
         if (t >= 1){
           if (p.dir === 1){ p.x = p.rx; p.y = p.ry; p.atRight = true; }
@@ -251,16 +231,13 @@
       ctx.fillStyle = COLORS[p.c];
       ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
     }
-
     requestAnimationFrame(step);
   }
 
   (function boot(){
     const {w,h} = layout();
     ctx.fillStyle = 'rgba(11,13,18,1)'; ctx.fillRect(0,0,w,h);
-    if (!PREFERS_REDUCED) {
-      scheduleCollect(activeColor++);
-    }
+    scheduleCollect(activeColor++);
   })();
   requestAnimationFrame(step);
 })();
